@@ -1,5 +1,6 @@
 use crate::{
-    MatArray, MatFile, MatFileRead, MatFileWrite, MatType, MatioError, MayBeFrom, MayBeInto, Result,
+    complex_array::ComplexArray, sparse::SparseCSC, MatArray, MatFile, MatFileRead, MatFileWrite,
+    MatType, MatioError, MayBeFrom, MayBeInto, Result,
 };
 use std::{ffi::CStr, marker::PhantomData, ptr, slice::from_raw_parts};
 
@@ -112,6 +113,27 @@ impl<'a> MatFileWrite<'a> {
         self.var(name, mat_array)?;
         Ok(self)
     }
+    /// Write a complex dense array to the MAT file
+    pub fn complex_array<S: Into<String>, T>(
+        &self,
+        name: S,
+        re: &'a [T],
+        im: &'a [T],
+        dims: Vec<u64>,
+    ) -> Result<&Self>
+    where
+        Mat<'a>: MayBeFrom<ComplexArray<'a, T>>,
+    {
+        let arr = ComplexArray::new(re, im, dims);
+        self.var(name, arr)
+    }
+    /// Write a real sparse CSC matrix to the MAT file
+    pub fn sparse<S: Into<String>, T>(&self, name: S, data: SparseCSC<'a, T>) -> Result<&Self>
+    where
+        Mat<'a>: MayBeFrom<SparseCSC<'a, T>>,
+    {
+        self.var(name, data)
+    }
 }
 impl<'a> Mat<'a> {
     /// Returns the rank (# of dimensions) of the Matlab variable
@@ -131,6 +153,14 @@ impl<'a> Mat<'a> {
     /// Returns the number of elements of the Matlab variable
     pub fn len(&self) -> usize {
         self.dims().into_iter().product::<usize>() as usize
+    }
+    /// Returns true if the variable contains complex data
+    pub fn is_complex(&self) -> bool {
+        unsafe { (*self.matvar_t).isComplex != 0 }
+    }
+    /// Returns true if the variable is a sparse matrix
+    pub fn is_sparse(&self) -> bool {
+        unsafe { (*self.matvar_t).class_type == ffi::matio_classes_MAT_C_SPARSE }
     }
     pub(crate) fn mat_type(&self) -> Option<MatType> {
         MatType::from_ptr(self.matvar_t)

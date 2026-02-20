@@ -160,6 +160,10 @@ pub use convert::{MayBeFrom, MayBeInto};
 pub use derive::MatIO;
 mod mat_array;
 pub use mat_array::MatArray;
+pub mod complex_array;
+pub use complex_array::{ComplexArray, ComplexVec};
+pub mod sparse;
+pub use sparse::{ComplexSparseCSC, ComplexSparseCSCOwned, SparseCSC, SparseCSCOwned};
 
 #[derive(Error, Debug)]
 pub enum MatioError {

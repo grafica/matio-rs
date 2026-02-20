@@ -1,4 +1,8 @@
-use crate::{DataType, Mat, MatioError, Result};
+use crate::{
+    complex_array::ComplexVec,
+    sparse::{ComplexSparseCSCOwned, SparseCSCOwned},
+    DataType, Mat, MatioError, Result,
+};
 use std::ptr;
 
 /// Convert a [Mat] variable into a Rust data type
@@ -197,4 +201,168 @@ impl<'a> MayBeInto<Vec<String>> for Mat<'a> {
             )),
         }
     }
+}
+
+// --- Complex dense MayBeInto ---
+
+macro_rules! maybe_into_complex {
+    ( $( ($rs:ty,$mat_c:expr,$mat_t:expr) ),+ ) => {
+        $(
+            impl<'a> MayBeInto<ComplexVec<$rs>> for Mat<'a> {
+                fn maybe_into(self) -> Result<ComplexVec<$rs>> {
+                    if !self.is_complex() {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            "complex".to_string(),
+                            "real".to_string(),
+                        ));
+                    }
+                    let data_type = unsafe { (*self.matvar_t).data_type };
+                    if data_type != $mat_t {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            stringify!($rs).to_string(),
+                            self.mat_type().map(|t| t.to_string()).unwrap_or_default(),
+                        ));
+                    }
+                    let n = self.len();
+                    let dims = self.dims();
+                    let complex_split = unsafe {
+                        &*((*self.matvar_t).data as *const ffi::mat_complex_split_t)
+                    };
+                    let mut re: Vec<$rs> = Vec::with_capacity(n);
+                    let mut im: Vec<$rs> = Vec::with_capacity(n);
+                    unsafe {
+                        ptr::copy(complex_split.Re as *const $rs, re.as_mut_ptr(), n);
+                        ptr::copy(complex_split.Im as *const $rs, im.as_mut_ptr(), n);
+                        re.set_len(n);
+                        im.set_len(n);
+                    }
+                    Ok(ComplexVec { re, im, dims })
+                }
+            }
+        )+
+    };
+}
+
+maybe_into_complex! {
+    (f64, ffi::matio_classes_MAT_C_DOUBLE, ffi::matio_types_MAT_T_DOUBLE),
+    (f32, ffi::matio_classes_MAT_C_SINGLE, ffi::matio_types_MAT_T_SINGLE)
+}
+
+// --- Sparse MayBeInto ---
+
+macro_rules! maybe_into_sparse {
+    ( $( ($rs:ty,$mat_t:expr) ),+ ) => {
+        $(
+            impl<'a> MayBeInto<SparseCSCOwned<$rs>> for Mat<'a> {
+                fn maybe_into(self) -> Result<SparseCSCOwned<$rs>> {
+                    if !self.is_sparse() {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            "sparse".to_string(),
+                            "dense".to_string(),
+                        ));
+                    }
+                    let data_type = unsafe { (*self.matvar_t).data_type };
+                    if data_type != $mat_t {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            stringify!($rs).to_string(),
+                            self.mat_type().map(|t| t.to_string()).unwrap_or_default(),
+                        ));
+                    }
+                    let dims = self.dims();
+                    let sparse = unsafe {
+                        &*((*self.matvar_t).data as *const ffi::mat_sparse_t)
+                    };
+                    let nir = sparse.nir as usize;
+                    let njc = sparse.njc as usize;
+                    let ndata = sparse.ndata as usize;
+
+                    let mut row_indices: Vec<u32> = Vec::with_capacity(nir);
+                    let mut col_pointers: Vec<u32> = Vec::with_capacity(njc);
+                    let mut values: Vec<$rs> = Vec::with_capacity(ndata);
+                    unsafe {
+                        ptr::copy(sparse.ir, row_indices.as_mut_ptr(), nir);
+                        row_indices.set_len(nir);
+                        ptr::copy(sparse.jc, col_pointers.as_mut_ptr(), njc);
+                        col_pointers.set_len(njc);
+                        ptr::copy(sparse.data as *const $rs, values.as_mut_ptr(), ndata);
+                        values.set_len(ndata);
+                    }
+                    Ok(SparseCSCOwned {
+                        row_indices,
+                        col_pointers,
+                        values,
+                        dims: [dims[0], dims[1]],
+                    })
+                }
+            }
+
+            impl<'a> MayBeInto<ComplexSparseCSCOwned<$rs>> for Mat<'a> {
+                fn maybe_into(self) -> Result<ComplexSparseCSCOwned<$rs>> {
+                    if !self.is_sparse() {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            "complex sparse".to_string(),
+                            "dense".to_string(),
+                        ));
+                    }
+                    if !self.is_complex() {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            "complex sparse".to_string(),
+                            "real sparse".to_string(),
+                        ));
+                    }
+                    let data_type = unsafe { (*self.matvar_t).data_type };
+                    if data_type != $mat_t {
+                        return Err(MatioError::TypeMismatch(
+                            self.name.clone(),
+                            stringify!($rs).to_string(),
+                            self.mat_type().map(|t| t.to_string()).unwrap_or_default(),
+                        ));
+                    }
+                    let dims = self.dims();
+                    let sparse = unsafe {
+                        &*((*self.matvar_t).data as *const ffi::mat_sparse_t)
+                    };
+                    let nir = sparse.nir as usize;
+                    let njc = sparse.njc as usize;
+                    let ndata = sparse.ndata as usize;
+                    let complex_split = unsafe {
+                        &*(sparse.data as *const ffi::mat_complex_split_t)
+                    };
+
+                    let mut row_indices: Vec<u32> = Vec::with_capacity(nir);
+                    let mut col_pointers: Vec<u32> = Vec::with_capacity(njc);
+                    let mut re: Vec<$rs> = Vec::with_capacity(ndata);
+                    let mut im: Vec<$rs> = Vec::with_capacity(ndata);
+                    unsafe {
+                        ptr::copy(sparse.ir, row_indices.as_mut_ptr(), nir);
+                        row_indices.set_len(nir);
+                        ptr::copy(sparse.jc, col_pointers.as_mut_ptr(), njc);
+                        col_pointers.set_len(njc);
+                        ptr::copy(complex_split.Re as *const $rs, re.as_mut_ptr(), ndata);
+                        re.set_len(ndata);
+                        ptr::copy(complex_split.Im as *const $rs, im.as_mut_ptr(), ndata);
+                        im.set_len(ndata);
+                    }
+                    Ok(ComplexSparseCSCOwned {
+                        row_indices,
+                        col_pointers,
+                        re,
+                        im,
+                        dims: [dims[0], dims[1]],
+                    })
+                }
+            }
+        )+
+    };
+}
+
+maybe_into_sparse! {
+    (f64, ffi::matio_types_MAT_T_DOUBLE),
+    (f32, ffi::matio_types_MAT_T_SINGLE)
 }

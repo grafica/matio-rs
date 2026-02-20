@@ -87,6 +87,7 @@ pub enum MatType {
     STRUCT,
     CHAR,
     CELL,
+    SPARSE,
 }
 
 macro_rules! impl_mat_type {
@@ -94,7 +95,11 @@ macro_rules! impl_mat_type {
         paste! {
         impl MatType {
             pub fn from_ptr(ptr: *const ffi::matvar_t) -> Option<Self >{
-                let mat_ct = unsafe { ((*ptr).class_type, (*ptr).data_type) };
+                let class_type = unsafe { (*ptr).class_type };
+                if class_type == ffi::matio_classes_MAT_C_SPARSE {
+                    return Some(MatType::SPARSE);
+                }
+                let mat_ct = unsafe { (class_type, (*ptr).data_type) };
                 match mat_ct {
                     $(
                     (ffi::[<matio_classes_MAT_C_ $mat_c>], ffi::[<matio_types_MAT_T_ $mat_t>]) => Some(MatType::$mat_c),
@@ -107,6 +112,7 @@ macro_rules! impl_mat_type {
                     $(
                         MatType::$mat_c => stringify!($mat_c).to_string(),
                     )+
+                    MatType::SPARSE => "SPARSE".to_string(),
                 }
             }
         }

@@ -245,6 +245,113 @@ mod nalgebra_matio {
     }
 }
 
+// --- Complex and sparse tests ---
+
+#[test]
+fn test_complex_dense_f64() {
+    let path = root();
+    let re = vec![1.0f64, 2.0, 3.0, 4.0];
+    let im = vec![5.0f64, 6.0, 7.0, 8.0];
+    let dims = vec![2u64, 2];
+    let arr = ComplexArray::new(&re, &im, dims.clone());
+    MatFile::save(&path).unwrap().var("z", arr).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let z: ComplexVec<f64> = mat_file.var("z").unwrap();
+    assert_eq!(z.re, re);
+    assert_eq!(z.im, im);
+    assert_eq!(z.dims, vec![2usize, 2]);
+}
+
+#[test]
+fn test_complex_dense_f32() {
+    let path = root();
+    let re = vec![1.0f32, 2.0, 3.0];
+    let im = vec![4.0f32, 5.0, 6.0];
+    let dims = vec![1u64, 3];
+    let arr = ComplexArray::new(&re, &im, dims.clone());
+    MatFile::save(&path).unwrap().var("z", arr).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let z: ComplexVec<f32> = mat_file.var("z").unwrap();
+    assert_eq!(z.re, re);
+    assert_eq!(z.im, im);
+    assert_eq!(z.dims, vec![1usize, 3]);
+}
+
+#[test]
+fn test_sparse_real_f64() {
+    let path = root();
+    // 3x3 identity matrix in CSC format
+    let row_indices = vec![0u32, 1, 2];
+    let col_pointers = vec![0u32, 1, 2, 3];
+    let values = vec![1.0f64, 1.0, 1.0];
+    let dims = [3usize, 3];
+    let sparse = SparseCSC::new(&row_indices, &col_pointers, &values, dims);
+    MatFile::save(&path).unwrap().var("s", sparse).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let s: SparseCSCOwned<f64> = mat_file.var("s").unwrap();
+    assert_eq!(s.row_indices, row_indices);
+    assert_eq!(s.col_pointers, col_pointers);
+    assert_eq!(s.values, values);
+    assert_eq!(s.dims, dims);
+}
+
+#[test]
+fn test_sparse_real_f32() {
+    let path = root();
+    // 2x3 sparse matrix: [1 0 2; 0 3 0]
+    let row_indices = vec![0u32, 1, 0];
+    let col_pointers = vec![0u32, 1, 2, 3];
+    let values = vec![1.0f32, 3.0, 2.0];
+    let dims = [2usize, 3];
+    let sparse = SparseCSC::new(&row_indices, &col_pointers, &values, dims);
+    MatFile::save(&path).unwrap().var("s", sparse).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let s: SparseCSCOwned<f32> = mat_file.var("s").unwrap();
+    assert_eq!(s.row_indices, row_indices);
+    assert_eq!(s.col_pointers, col_pointers);
+    assert_eq!(s.values, values);
+    assert_eq!(s.dims, dims);
+}
+
+#[test]
+fn test_complex_sparse_f64() {
+    let path = root();
+    // 3x3 complex sparse identity
+    let row_indices = vec![0u32, 1, 2];
+    let col_pointers = vec![0u32, 1, 2, 3];
+    let re = vec![1.0f64, 2.0, 3.0];
+    let im = vec![4.0f64, 5.0, 6.0];
+    let dims = [3usize, 3];
+    let sparse = ComplexSparseCSC::new(&row_indices, &col_pointers, &re, &im, dims);
+    MatFile::save(&path).unwrap().var("cs", sparse).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let cs: ComplexSparseCSCOwned<f64> = mat_file.var("cs").unwrap();
+    assert_eq!(cs.row_indices, row_indices);
+    assert_eq!(cs.col_pointers, col_pointers);
+    assert_eq!(cs.re, re);
+    assert_eq!(cs.im, im);
+    assert_eq!(cs.dims, dims);
+}
+
+#[test]
+fn test_complex_sparse_f32() {
+    let path = root();
+    let row_indices = vec![0u32, 1];
+    let col_pointers = vec![0u32, 1, 2];
+    let re = vec![1.0f32, 2.0];
+    let im = vec![3.0f32, 4.0];
+    let dims = [2usize, 2];
+    let sparse = ComplexSparseCSC::new(&row_indices, &col_pointers, &re, &im, dims);
+    MatFile::save(&path).unwrap().var("cs", sparse).unwrap();
+    let mat_file = MatFile::load(&path).unwrap();
+    let cs: ComplexSparseCSCOwned<f32> = mat_file.var("cs").unwrap();
+    assert_eq!(cs.row_indices, row_indices);
+    assert_eq!(cs.col_pointers, col_pointers);
+    assert_eq!(cs.re, re);
+    assert_eq!(cs.im, im);
+    assert_eq!(cs.dims, dims);
+}
+
 #[cfg(feature = "faer")]
 mod faer_matio {
     use super::*;

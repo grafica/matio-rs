@@ -1,6 +1,9 @@
 use std::{ffi::CString, marker::PhantomData, ptr, vec};
 
-use crate::{Mat, MatArray, MatioError, Result};
+use crate::{
+    complex_array::ComplexArray, sparse::ComplexSparseCSC, sparse::SparseCSC, Mat, MatArray,
+    MatioError, Result,
+};
 
 /// Convert a Rust data type into a [Mat] variable
 pub trait MayBeFrom<T> {
@@ -447,4 +450,130 @@ impl<'a> MayBeFrom<&Vec<&str>> for Mat<'a> {
     {
         <Mat<'a> as MayBeFrom<&[&str]>>::maybe_from(name, data)
     }
+}
+
+// --- Complex dense MayBeFrom ---
+
+macro_rules! maybe_from_complex {
+    ( $( ($rs:ty,$mat_c:expr,$mat_t:expr) ),+ ) => {
+        $(
+            impl<'a> MayBeFrom<ComplexArray<'a, $rs>> for Mat<'a> {
+                fn maybe_from<S: Into<String>>(name: S, data: ComplexArray<'a, $rs>) -> Result<Self> {
+                    let c_name = CString::new(name.into())?;
+                    let mut complex_split = ffi::mat_complex_split_t {
+                        Re: data.re.as_ptr() as *mut std::ffi::c_void,
+                        Im: data.im.as_ptr() as *mut std::ffi::c_void,
+                    };
+                    let matvar_t = unsafe {
+                        ffi::Mat_VarCreate(
+                            c_name.as_ptr(),
+                            $mat_c,
+                            $mat_t,
+                            data.dims.len() as i32,
+                            data.dims.as_ptr() as *mut _,
+                            &mut complex_split as *mut _ as *mut std::ffi::c_void,
+                            ffi::matio_flags_MAT_F_COMPLEX as i32,
+                        )
+                    };
+                    if matvar_t.is_null() {
+                        Err(MatioError::MatVarCreate(
+                            c_name.to_str().unwrap().to_string(),
+                        ))
+                    } else {
+                        Mat::from_ptr(c_name.to_str().unwrap(), matvar_t)
+                    }
+                }
+            }
+        )+
+    };
+}
+
+maybe_from_complex! {
+    (f64, ffi::matio_classes_MAT_C_DOUBLE, ffi::matio_types_MAT_T_DOUBLE),
+    (f32, ffi::matio_classes_MAT_C_SINGLE, ffi::matio_types_MAT_T_SINGLE)
+}
+
+// --- Sparse MayBeFrom ---
+
+macro_rules! maybe_from_sparse {
+    ( $( ($rs:ty,$mat_t:expr) ),+ ) => {
+        $(
+            impl<'a> MayBeFrom<SparseCSC<'a, $rs>> for Mat<'a> {
+                fn maybe_from<S: Into<String>>(name: S, data: SparseCSC<'a, $rs>) -> Result<Self> {
+                    let c_name = CString::new(name.into())?;
+                    let mut dims = [data.dims[0], data.dims[1]];
+                    let mut sparse = ffi::mat_sparse_t {
+                        nzmax: data.values.len() as u32,
+                        ir: data.row_indices.as_ptr() as *mut u32,
+                        nir: data.row_indices.len() as u32,
+                        jc: data.col_pointers.as_ptr() as *mut u32,
+                        njc: data.col_pointers.len() as u32,
+                        ndata: data.values.len() as u32,
+                        data: data.values.as_ptr() as *mut std::ffi::c_void,
+                    };
+                    let matvar_t = unsafe {
+                        ffi::Mat_VarCreate(
+                            c_name.as_ptr(),
+                            ffi::matio_classes_MAT_C_SPARSE,
+                            $mat_t,
+                            2,
+                            dims.as_mut_ptr(),
+                            &mut sparse as *mut _ as *mut std::ffi::c_void,
+                            0,
+                        )
+                    };
+                    if matvar_t.is_null() {
+                        Err(MatioError::MatVarCreate(
+                            c_name.to_str().unwrap().to_string(),
+                        ))
+                    } else {
+                        Mat::from_ptr(c_name.to_str().unwrap(), matvar_t)
+                    }
+                }
+            }
+
+            impl<'a> MayBeFrom<ComplexSparseCSC<'a, $rs>> for Mat<'a> {
+                fn maybe_from<S: Into<String>>(name: S, data: ComplexSparseCSC<'a, $rs>) -> Result<Self> {
+                    let c_name = CString::new(name.into())?;
+                    let mut dims = [data.dims[0], data.dims[1]];
+                    let mut complex_split = ffi::mat_complex_split_t {
+                        Re: data.re.as_ptr() as *mut std::ffi::c_void,
+                        Im: data.im.as_ptr() as *mut std::ffi::c_void,
+                    };
+                    let mut sparse = ffi::mat_sparse_t {
+                        nzmax: data.re.len() as u32,
+                        ir: data.row_indices.as_ptr() as *mut u32,
+                        nir: data.row_indices.len() as u32,
+                        jc: data.col_pointers.as_ptr() as *mut u32,
+                        njc: data.col_pointers.len() as u32,
+                        ndata: data.re.len() as u32,
+                        data: &mut complex_split as *mut _ as *mut std::ffi::c_void,
+                    };
+                    let matvar_t = unsafe {
+                        ffi::Mat_VarCreate(
+                            c_name.as_ptr(),
+                            ffi::matio_classes_MAT_C_SPARSE,
+                            $mat_t,
+                            2,
+                            dims.as_mut_ptr(),
+                            &mut sparse as *mut _ as *mut std::ffi::c_void,
+                            ffi::matio_flags_MAT_F_COMPLEX as i32,
+                        )
+                    };
+                    if matvar_t.is_null() {
+                        Err(MatioError::MatVarCreate(
+                            c_name.to_str().unwrap().to_string(),
+                        ))
+                    } else {
+                        Mat::from_ptr(c_name.to_str().unwrap(), matvar_t)
+                    }
+                }
+            }
+        )+
+    };
+}
+
+maybe_from_sparse! {
+    (f64, ffi::matio_types_MAT_T_DOUBLE),
+    (f32, ffi::matio_types_MAT_T_SINGLE)
 }
